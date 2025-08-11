@@ -45,7 +45,7 @@ pub struct TonicBufConfig<P: AsRef<Path> = &'static str> {
 }
 
 pub fn compile_from_buf_workspace(
-    tonic_builder: tonic_build::Builder,
+    tonic_builder: tonic_prost_build::Builder,
     config: Option<prost_build::Config>,
 ) -> Result<(), TonicBufBuildError> {
     compile_from_buf_workspace_with_config::<&'static str>(
@@ -56,7 +56,7 @@ pub fn compile_from_buf_workspace(
 }
 
 pub fn compile_from_buf_workspace_with_config<P: AsRef<Path>>(
-    tonic_builder: tonic_build::Builder,
+    tonic_builder: tonic_prost_build::Builder,
     config: Option<prost_build::Config>,
     tonic_buf_config: TonicBufConfig<P>,
 ) -> Result<(), TonicBufBuildError> {
@@ -75,30 +75,34 @@ pub fn compile_from_buf_workspace_with_config<P: AsRef<Path>>(
     let buf_work = buf::BufWorkYaml::load(buf_work_file.as_path())?;
 
     let buf_work_directories = buf::export_all_from_workspace(&buf_work, &export_dir, buf_dir)?;
-    let mut includes = vec![export_dir.clone()];
+    let mut includes: Vec<String> = Vec::with_capacity(1 + buf_work_directories.len());
 
-    for dep in buf_work_directories {
-        includes.push(dep);
-    }
+    includes.push(export_dir.as_path().to_string_lossy().into_owned());
+
+    includes.extend(
+        buf_work_directories
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned()),
+    );
 
     let protos = buf::ls_files(buf_dir)?;
 
     match config {
         None => tonic_builder.compile_protos(&protos, &includes),
-        Some(config) => tonic_builder.compile_protos_with_config(config, &protos, &includes),
+        Some(config) => tonic_builder.compile_with_config(config, &protos, &includes),
     }
     .map_err(|e| TonicBufBuildError::new("error running tonic build", e.into()))
 }
 
 pub fn compile_from_buf(
-    tonic_builder: tonic_build::Builder,
+    tonic_builder: tonic_prost_build::Builder,
     config: Option<prost_build::Config>,
 ) -> Result<(), TonicBufBuildError> {
     compile_from_buf_with_config::<&'static str>(tonic_builder, config, TonicBufConfig::default())
 }
 
 pub fn compile_from_buf_with_config<P: AsRef<Path>>(
-    tonic_builder: tonic_build::Builder,
+    tonic_builder: tonic_prost_build::Builder,
     config: Option<prost_build::Config>,
     tonic_buf_config: TonicBufConfig<P>,
 ) -> Result<(), TonicBufBuildError> {
@@ -118,11 +122,15 @@ pub fn compile_from_buf_with_config<P: AsRef<Path>>(
 
     buf::export_all(&buf, &export_dir)?;
     let protos = buf::ls_files(buf_dir)?;
-    let includes = [buf_dir, &export_dir];
+
+    let includes: Vec<String> = vec![
+        buf_dir.to_string_lossy().into_owned(),
+        export_dir.as_path().to_string_lossy().into_owned(),
+    ];
 
     match config {
         None => tonic_builder.compile_protos(&protos, &includes),
-        Some(config) => tonic_builder.compile_protos_with_config(config, &protos, &includes),
+        Some(config) => tonic_builder.compile_with_config(config, &protos, &includes),
     }
     .map_err(|e| TonicBufBuildError::new("error running tonic build", e.into()))
 }
